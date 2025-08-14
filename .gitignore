@@ -1,1 +1,209 @@
-.idea
+# ======================================
+# Python
+# ======================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff
+instance/
+.webassets-cache
+
+# Scrapy stuff
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# IPython
+profile_default/
+ipython_config.py
+
+# ======================================
+# Jupyter Notebook
+# ======================================
+
+# Notebook checkpoints
+.ipynb_checkpoints
+
+# IPython notebook temp files
+*.nbconvert.ipynb
+*.nbconvert
+
+# Jupyter runtime
+~$*
+*.bak
+
+# ======================================
+# Data files
+# ======================================
+
+# Common large data file formats
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.xlsm
+*.ods
+*.odt
+*.odp
+*.json
+*.xml
+*.yaml
+*.yml
+*.sql
+*.db
+*.db3
+*.sqlite
+*.sqlite3
+*.feather
+*.parquet
+*.h5
+*.hdf5
+*.npz
+*.npy
+*.mat
+
+# Binary data
+*.bin
+*.dat
+
+# Images / media
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.tiff
+*.bmp
+*.svg
+*.eps
+*.raw
+
+# Audio / video
+*.mp3
+*.wav
+*.flac
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+
+# ======================================
+# Environments
+# ======================================
+
+# Virtualenv
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Conda
+.conda/
+conda/
+conda-bld/
+*.conda
+*.lock
+
+# ======================================
+# OS files
+# ======================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ======================================
+# IDE / Editor
+# ======================================
+
+# VS Code
+.vscode/
+
+# PyCharm / JetBrains
+.idea/
+*.iml
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
