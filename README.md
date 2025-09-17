@@ -66,12 +66,25 @@ This section outlines the full process to build, validate, and extend a cytokine
 - Create and activate env: `conda env create -f environment.yml && conda activate cytometapredict`.
 - Ensure `data/` contains the CSVs and `.mgb` files as listed above.
 
-**2) Data Audit (Recommended)**
+**2) Decode `.mgb` Files**
+- Use the helper CLI to convert MPEG-G archives into per-sample folders (supports parallelism and progress bars):
+  ```bash
+  python -m src.pipeline.decode_mgb \
+      --decoder-bin /path/to/mpegg \
+      --command-template "{decoder} decode --input {input} --output-dir {output_dir} --format fastq" \
+      --mgb-dir data/TrainFiles \
+      --output-root data/decoded \
+      --manifest reports/decode_manifest.jsonl \
+      --workers 4 --skip-existing
+  ```
+- Install `tqdm` inside the environment for richer progress bars (optional). Add `--no-progress` to suppress progress output in CI logs.
+
+**3) Data Audit (Recommended)**
 - Check join keys: `Train.csv.SampleID` ↔ `cytokine_profiles.csv.SampleID`, `Train.csv.SubjectID` ↔ `Train_Subjects.csv.SubjectID`.
 - Inspect target distributions; consider log1p transform for heavy tails (baseline already applies this internally).
 - Note multiple `.mgb` per `SubjectID` and across body sites; plan aggregation policy for future feature extraction.
 
-**3) Train Baseline (Metadata‑Only)**
+**4) Train Baseline (Metadata-Only)**
 - Run CV training (grouped by `SubjectID`): `python -m src.train_baseline --model random_forest --n_splits 5`.
 - Outputs:
   - Metrics CSV: `reports/baseline_metrics_random_forest.csv`.
