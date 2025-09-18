@@ -70,6 +70,7 @@ class DecodeResult:
     returncode: Optional[int]
     duration_sec: float
     output_dir: Path
+    output_path: Path
     stdout: Optional[str]
     stderr: Optional[str]
     sample_id: Optional[str]
@@ -94,16 +95,16 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--decoder-bin",
         type=str,
-        default="mpeg-g",
+        default="genie",
         help="Executable used to perform decoding",
     )
     parser.add_argument(
         "--command-template",
         type=str,
-        default="{decoder} decode --input {input} --output-dir {output_dir}",
+        default="{decoder} run -i {input} -o {output}",
         help=(
-            "Template for the decode command. Use placeholders {decoder}, {input}, {output_dir}, {stem}, {output_root}. "
-            "Example: 'mpeg-g extract --in {input} --out {output_dir} --format fastq'."
+            "Template for the decode command. Use placeholders {decoder}, {input}, {output}, {output_dir}, {stem}, {output_root}. "
+            "Example: 'genie run -i {input} -o {output}'."
         ),
     )
     parser.add_argument(
@@ -128,6 +129,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--skip-existing",
         action="store_true",
         help="Do not rerun decoding when the output directory already exists and is non-empty",
+    )
+    parser.add_argument(
+        "--output-name-template",
+        type=str,
+        default="{stem}.fastq",
+        help="Filename template for decoded output within the per-file directory",
     )
     parser.add_argument(
         "--no-progress",
@@ -177,15 +184,28 @@ def build_command(
     mgb_path: Path,
     output_root: Path,
     per_file_dir: Path,
+    output_path: Path,
 ) -> List[str]:
     cmd_str = template.format(
         decoder=decoder_bin,
         input=str(mgb_path),
         output_dir=str(per_file_dir),
+        output=str(output_path),
         stem=mgb_path.stem,
         output_root=str(output_root),
     )
     return shlex.split(cmd_str)
+
+
+def compute_output_paths(
+    output_root: Path,
+    mgb_path: Path,
+    output_name_template: str,
+) -> tuple[Path, Path]:
+    per_file_dir = output_root / mgb_path.stem
+    output_name = output_name_template.format(stem=mgb_path.stem)
+    output_path = per_file_dir / output_name
+    return per_file_dir, output_path
 
 
 def decode_one(
@@ -194,11 +214,12 @@ def decode_one(
     decoder_bin: str,
     template: str,
     skip_existing: bool,
+    output_name_template: str,
 ) -> DecodeResult:
-    per_file_dir = output_root / mgb_path.stem
+    per_file_dir, output_path = compute_output_paths(output_root, mgb_path, output_name_template)
     ensure_dirs(per_file_dir)
 
-    if skip_existing and any(per_file_dir.iterdir()):
+    if skip_existing and output_path.exists():
         LOGGER.info("Skipping %s (outputs already exist)", mgb_path.name)
         return DecodeResult(
             filename=mgb_path.name,
@@ -206,6 +227,7 @@ def decode_one(
             returncode=None,
             duration_sec=0.0,
             output_dir=per_file_dir,
+            output_path=output_path,
             stdout=None,
             stderr=None,
             sample_id=None,
@@ -213,7 +235,7 @@ def decode_one(
             sample_type=None,
         )
 
-    cmd = build_command(template, decoder_bin, mgb_path, output_root, per_file_dir)
+    cmd = build_command(template, decoder_bin, mgb_path, output_root, per_file_dir, output_path)
     LOGGER.debug("Running command: %s", " ".join(cmd))
 
     start = time.perf_counter()
@@ -240,6 +262,7 @@ def decode_one(
         returncode=proc.returncode,
         duration_sec=duration,
         output_dir=per_file_dir,
+        output_path=output_path,
         stdout=proc.stdout.strip() or None,
         stderr=proc.stderr.strip() or None,
         sample_id=None,
@@ -260,6 +283,7 @@ def enrich_with_metadata(results: Iterable[DecodeResult], metadata: Dict[str, Di
                     returncode=res.returncode,
                     duration_sec=res.duration_sec,
                     output_dir=res.output_dir,
+                    output_path=res.output_path,
                     stdout=res.stdout,
                     stderr=res.stderr,
                     sample_id=meta.get("SampleID"),
@@ -282,6 +306,7 @@ def write_manifest(path: Path, results: Iterable[DecodeResult]) -> None:
                 "returncode": res.returncode,
                 "duration_sec": round(res.duration_sec, 3),
                 "output_dir": str(res.output_dir),
+                "output_path": str(res.output_path),
                 "stdout": res.stdout,
                 "stderr": res.stderr,
                 "SampleID": res.sample_id,
@@ -298,6 +323,7 @@ def run_decodes(
     template: str,
     skip_existing: bool,
     workers: int,
+    output_name_template: str,
     show_progress: bool,
 ) -> List[DecodeResult]:
     mgb_list = list(mgb_files)
@@ -318,7 +344,14 @@ def run_decodes(
     if workers <= 1:
         for mgb in mgb_list:
             results.append(
-                decode_one(mgb, output_root, decoder_bin, template, skip_existing)
+                decode_one(
+                    mgb,
+                    output_root,
+                    decoder_bin,
+                    template,
+                    skip_existing,
+                    output_name_template,
+                )
             )
             progress.update()
         progress.close()
@@ -333,6 +366,7 @@ def run_decodes(
                 decoder_bin,
                 template,
                 skip_existing,
+                output_name_template,
             ): mgb
             for mgb in mgb_list
         }
@@ -342,13 +376,19 @@ def run_decodes(
             except Exception as exc:  # pragma: no cover - defensive logging
                 mgb = future_map[future]
                 LOGGER.exception("Decoding %s raised an error", mgb.name)
+                per_file_dir, output_path = compute_output_paths(
+                    output_root,
+                    mgb,
+                    output_name_template,
+                )
                 results.append(
                     DecodeResult(
                         filename=mgb.name,
                         status="error",
                         returncode=None,
                         duration_sec=0.0,
-                        output_dir=output_root / mgb.stem,
+                        output_dir=per_file_dir,
+                        output_path=output_path,
                         stdout=None,
                         stderr=str(exc),
                         sample_id=None,
@@ -380,6 +420,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         template=args.command_template,
         skip_existing=args.skip_existing,
         workers=args.workers,
+        output_name_template=args.output_name_template,
         show_progress=not args.no_progress,
     )
 

@@ -70,13 +70,14 @@ This section outlines the full process to build, validate, and extend a cytokine
 - Use the helper CLI to convert MPEG-G archives into per-sample folders (supports parallelism and progress bars):
   ```bash
   python -m src.pipeline.decode_mgb \
-      --decoder-bin /path/to/mpegg \
-      --command-template "{decoder} decode --input {input} --output-dir {output_dir} --format fastq" \
+      --decoder-bin genie \
+      --command-template "{decoder} run -i {input} -o {output}" \
       --mgb-dir data/TrainFiles \
       --output-root data/decoded \
       --manifest reports/decode_manifest.jsonl \
       --workers 4 --skip-existing
   ```
+- Outputs land under `data/decoded/<filename>/` with per-sample FASTQ files (override the filename pattern with `--output-name-template`, e.g., `{stem}.fastq.gz`).
 - Install `tqdm` inside the environment for richer progress bars (optional). Add `--no-progress` to suppress progress output in CI logs.
 
 **3) Data Audit (Recommended)**
