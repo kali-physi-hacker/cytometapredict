@@ -80,24 +80,37 @@ This section outlines the full process to build, validate, and extend a cytokine
 - Outputs land under `data/decoded/<filename>/` with per-sample FASTQ files (override the filename pattern with `--output-name-template`, e.g., `{stem}.fastq.gz`).
 - Install `tqdm` inside the environment for richer progress bars (optional). Add `--no-progress` to suppress progress output in CI logs.
 
-**3) Data Audit (Recommended)**
+**3) Trim FASTQ Files (Optional but Recommended)**
+- Once decoding is complete, run the trimming CLI to remove adapters or low-quality tails (defaults to `fastp` but any tool can be wrapped via the template):
+  ```bash
+  python -m src.pipeline.trim_fastq \
+      --tool-bin fastp \
+      --command-template "{tool} -i {input} -o {output} --trim_front1 5 --length_required 50" \
+      --fastq-root data/decoded \
+      --output-root data/trimmed \
+      --manifest reports/trim_manifest.jsonl \
+      --workers 4 --skip-existing
+  ```
+- Customize `--command-template` with the flags your trimmer needs; outputs default to `data/trimmed/<stem>/<stem>_trimmed.fastq.gz`. Set `--output-name-template` to change the filename and add `--no-progress` for quiet logs.
+
+**4) Data Audit (Recommended)**
 - Check join keys: `Train.csv.SampleID` ↔ `cytokine_profiles.csv.SampleID`, `Train.csv.SubjectID` ↔ `Train_Subjects.csv.SubjectID`.
 - Inspect target distributions; consider log1p transform for heavy tails (baseline already applies this internally).
 - Note multiple `.mgb` per `SubjectID` and across body sites; plan aggregation policy for future feature extraction.
 
-**4) Train Baseline (Metadata-Only)**
+**5) Train Baseline (Metadata-Only)**
 - Run CV training (grouped by `SubjectID`): `python -m src.train_baseline --model random_forest --n_splits 5`.
 - Outputs:
   - Metrics CSV: `reports/baseline_metrics_random_forest.csv`.
   - Fold models: `models/baseline/baseline_random_forest_fold*.joblib` (includes fitted transformer and metadata).
 - Alternatives: `--model ridge` (linear baseline) or adjust `--n_splits`.
 
-**4) Evaluate Results**
+**6) Evaluate Results**
 - Open the metrics CSV and review per‑cytokine and macro averages.
 - Compare against a null or simple baseline (e.g., per‑cytokine mean) to quantify signal from metadata.
 - Validate grouping: ensure subjects don’t leak across folds (already enforced by GroupKFold).
 
-**5) Extend With `.mgb`‑Derived Microbiome Features (Optional)**
+**7) Extend With `.mgb`‑Derived Microbiome Features (Optional)**
 - Decode `.mgb` to analysis‑ready data using official MPEG‑G tooling (see `docs/MPEGG_Track1_PRD.pdf`). Common paths:
   - Taxonomic abundances (species/genus) per sample.
   - Functional profiles (pathways/KO/EC) per sample.
@@ -110,17 +123,17 @@ This section outlines the full process to build, validate, and extend a cytokine
   - Applies compositional transforms (log, CLR) and scaling; one‑hot encodes `SampleType`.
 - Update `src/train_baseline.py` (or add a new trainer) to include these features alongside metadata and rerun CV.
 
-**6) Modeling Upgrades (Optional)**
+**8) Modeling Upgrades (Optional)**
 - Try gradient‑boosted trees (LightGBM/XGBoost) for stronger baselines.
 - Use multi‑task learning (`MultiOutputRegressor` wrapper already supported) or PLS for correlated cytokines.
 - Add feature importance/SHAP for interpretability; prune features via variance/importance thresholds.
 
-**7) Reproducibility**
+**9) Reproducibility**
 - Grouped CV by `SubjectID` prevents leakage.
 - Seeds: use `--seed` to control model seeds; artifacts include fitted transformers for exact replay.
 - Persist outputs: models in `models/`, metrics in `reports/` with timestamps or model tags as needed.
 
-**8) Inference (Conceptual)**
+**10) Inference (Conceptual)**
 - Load a saved fold model and its transformer, transform input features with the same pipeline, predict, and invert log if used.
 - Example (Python snippet):
 
@@ -143,7 +156,7 @@ pred = np.clip(np.expm1(pred), a_min=0, a_max=None)  # invert log1p, clip negati
 
 If you want, we can add a small CLI (`src/predict_baseline.py`) to batch this over a CSV in the same schema.
 
-**9) Quality Checks**
+**11) Quality Checks**
 - Temporal leakage: avoid using `CollectionDate` or infection phase labels (`CL1–CL4`) as predictive features unless carefully justified.
 - Site bias: evaluate per `SampleType` performance; consider site‑specific models or ensembling.
 - Scaling: ensure consistent transforms between train and inference via saved transformers.
