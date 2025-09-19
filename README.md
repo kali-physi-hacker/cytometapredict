@@ -91,26 +91,53 @@ This section outlines the full process to build, validate, and extend a cytokine
       --manifest reports/trim_manifest.jsonl \
       --workers 4 --skip-existing
   ```
-- Customize `--command-template` with the flags your trimmer needs; outputs default to `data/trimmed/<stem>/<stem>_trimmed.fastq.gz`. Set `--output-name-template` to change the filename and add `--no-progress` for quiet logs.
+- Customize `--command-template` with the flags your trimmer needs; outputs default to `data/trimmed/<stem>/<stem>_trimmed.fastq.gz`. Set `--output-name-template` (single-end) or `--output-name-template-r1/--output-name-template-r2` (paired-end) to change filenames and add `--no-progress` for quiet logs.
+- For paired-end data (e.g., files like `SAMPLE_R1.fastq.gz`/`SAMPLE_R2.fastq.gz`), use placeholders `{input_r1}`, `{input_r2}`, `{output_r1}`, `{output_r2}`, and `{basename}` inside the template. Example fastp command:
+  ```bash
+  --command-template "{tool} \
+    -i {input_r1} -I {input_r2} \
+    -o {output_r1} -O {output_r2} \
+    --detect_adapter_for_pe \
+    --cut_front --cut_tail --cut_window_size 4 --cut_mean_quality 20 \
+    --trim_poly_g --trim_poly_x \
+    -l 50 \
+    --thread 4 \
+    -h {output_root}/{basename}.fastp.html \
+    -j {output_root}/{basename}.fastp.json"
+  ```
 
-**4) Data Audit (Recommended)**
+**4) Profile Microbiome (Optional)**
+- Run taxonomic/functional profiling on the trimmed reads using the integrated Kraken2 → Bracken → HUMAnN pipeline:
+  ```bash
+  python -m src.pipeline.profile_microbiome \
+      --kraken2-db /path/to/kraken2_db \
+      --bracken-read-len 150 --bracken-level S \
+      --humann-extra "--nucleotide-database /path/to/humann_nucl --protein-database /path/to/humann_prot" \
+      --fastq-root data/trimmed \
+      --output-root data/profiles \
+      --workers 2 --skip-existing \
+      --manifest reports/profile_manifest.jsonl
+  ```
+- The script auto-detects paired reads (R1/R2 naming). Customize `--bracken-*`, `--humann-*`, or `--kraken2-extra` flags as needed; outputs land under `data/profiles/<basename>/` with per-step artifacts.
+
+**5) Data Audit (Recommended)**
 - Check join keys: `Train.csv.SampleID` ↔ `cytokine_profiles.csv.SampleID`, `Train.csv.SubjectID` ↔ `Train_Subjects.csv.SubjectID`.
 - Inspect target distributions; consider log1p transform for heavy tails (baseline already applies this internally).
 - Note multiple `.mgb` per `SubjectID` and across body sites; plan aggregation policy for future feature extraction.
 
-**5) Train Baseline (Metadata-Only)**
+**6) Train Baseline (Metadata-Only)**
 - Run CV training (grouped by `SubjectID`): `python -m src.train_baseline --model random_forest --n_splits 5`.
 - Outputs:
   - Metrics CSV: `reports/baseline_metrics_random_forest.csv`.
   - Fold models: `models/baseline/baseline_random_forest_fold*.joblib` (includes fitted transformer and metadata).
 - Alternatives: `--model ridge` (linear baseline) or adjust `--n_splits`.
 
-**6) Evaluate Results**
+**7) Evaluate Results**
 - Open the metrics CSV and review per‑cytokine and macro averages.
 - Compare against a null or simple baseline (e.g., per‑cytokine mean) to quantify signal from metadata.
 - Validate grouping: ensure subjects don’t leak across folds (already enforced by GroupKFold).
 
-**7) Extend With `.mgb`‑Derived Microbiome Features (Optional)**
+**8) Extend With `.mgb`‑Derived Microbiome Features (Optional)**
 - Decode `.mgb` to analysis‑ready data using official MPEG‑G tooling (see `docs/MPEGG_Track1_PRD.pdf`). Common paths:
   - Taxonomic abundances (species/genus) per sample.
   - Functional profiles (pathways/KO/EC) per sample.
@@ -123,17 +150,17 @@ This section outlines the full process to build, validate, and extend a cytokine
   - Applies compositional transforms (log, CLR) and scaling; one‑hot encodes `SampleType`.
 - Update `src/train_baseline.py` (or add a new trainer) to include these features alongside metadata and rerun CV.
 
-**8) Modeling Upgrades (Optional)**
+**9) Modeling Upgrades (Optional)**
 - Try gradient‑boosted trees (LightGBM/XGBoost) for stronger baselines.
 - Use multi‑task learning (`MultiOutputRegressor` wrapper already supported) or PLS for correlated cytokines.
 - Add feature importance/SHAP for interpretability; prune features via variance/importance thresholds.
 
-**9) Reproducibility**
+**10) Reproducibility**
 - Grouped CV by `SubjectID` prevents leakage.
 - Seeds: use `--seed` to control model seeds; artifacts include fitted transformers for exact replay.
 - Persist outputs: models in `models/`, metrics in `reports/` with timestamps or model tags as needed.
 
-**10) Inference (Conceptual)**
+**11) Inference (Conceptual)**
 - Load a saved fold model and its transformer, transform input features with the same pipeline, predict, and invert log if used.
 - Example (Python snippet):
 
@@ -156,7 +183,7 @@ pred = np.clip(np.expm1(pred), a_min=0, a_max=None)  # invert log1p, clip negati
 
 If you want, we can add a small CLI (`src/predict_baseline.py`) to batch this over a CSV in the same schema.
 
-**11) Quality Checks**
+**12) Quality Checks**
 - Temporal leakage: avoid using `CollectionDate` or infection phase labels (`CL1–CL4`) as predictive features unless carefully justified.
 - Site bias: evaluate per `SampleType` performance; consider site‑specific models or ensembling.
 - Scaling: ensure consistent transforms between train and inference via saved transformers.
