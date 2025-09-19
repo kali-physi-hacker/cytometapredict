@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple, Dict
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -31,6 +31,7 @@ class Dataset:
     feature_names: List[str]
     target_names: List[str]
     groups: np.ndarray  # SubjectID for GroupKFold
+    sample_ids: np.ndarray
     index: pd.Index
     transformer: ColumnTransformer
 
@@ -46,8 +47,37 @@ def _infer_target_columns(cytok_df: pd.DataFrame) -> List[str]:
     return candidates
 
 
+def _deduplicate_sample_records(
+    df: pd.DataFrame,
+    preferred_sample_types: Optional[Sequence[str]] = None,
+    allowed_sample_types: Optional[Sequence[str]] = None,
+) -> pd.DataFrame:
+    if allowed_sample_types is not None:
+        allowed_set = set(allowed_sample_types)
+        df = df[df["SampleType"].isin(allowed_set)].copy()
+
+    if df.empty:
+        return df
+
+    if preferred_sample_types is None:
+        preferred_sample_types = list(df["SampleType"].value_counts().index)
+
+    priority = {sample_type: idx for idx, sample_type in enumerate(preferred_sample_types)}
+    default_priority = len(preferred_sample_types)
+
+    df = df.copy()
+    df["__sample_priority"] = df["SampleType"].map(priority).fillna(default_priority)
+    df.sort_values(["SampleID", "__sample_priority", "filename"], inplace=True)
+    deduped = df.drop_duplicates(subset="SampleID", keep="first").copy()
+    deduped.drop(columns=["__sample_priority"], inplace=True)
+    return deduped
+
+
 def make_metadata_dataset(
     include_subject_covariates: bool = True,
+    preferred_sample_types: Optional[Sequence[str]] = None,
+    allowed_sample_types: Optional[Sequence[str]] = None,
+    deduplicate_sample_ids: bool = True,
 ) -> Dataset:
     """Build a metadata-only dataset by joining indices and selecting basic features.
 
@@ -57,6 +87,13 @@ def make_metadata_dataset(
 
     Targets:
       - All numeric cytokines in cytokine_profiles.csv (auto-inferred)
+
+    Args:
+        preferred_sample_types: Optional ordering that picks which SampleType to keep when a SampleID
+            has multiple entries. Earlier values win; unspecified types are used last.
+        allowed_sample_types: Optional whitelist; records outside the list are discarded before
+            deduplication.
+        deduplicate_sample_ids: When True (default) enforce one row per SampleID after filters.
     """
     train_df, cytok_df, subjects_df = load_indices()
 
@@ -89,6 +126,15 @@ def make_metadata_dataset(
     df_targets = df[target_cols]
     mask_any_target = df_targets.notna().any(axis=1)
     df = df.loc[mask_any_target].copy()
+
+    if deduplicate_sample_ids:
+        df = _deduplicate_sample_records(
+            df,
+            preferred_sample_types=preferred_sample_types,
+            allowed_sample_types=allowed_sample_types,
+        )
+        if df.empty:
+            raise ValueError("No records remain after applying sample type filters.")
 
     # Prepare transformers
     transformers = []
@@ -127,6 +173,7 @@ def make_metadata_dataset(
     y = df[target_cols].to_numpy(dtype=float)
     # Groups for GroupKFold
     groups = df["SubjectID"].astype(str).to_numpy()
+    sample_ids = df["SampleID"].astype(str).to_numpy()
 
     # Fit transformer to get X and expanded feature names
     X = ct.fit_transform(df)
@@ -152,7 +199,7 @@ def make_metadata_dataset(
         feature_names=out_feature_names,
         target_names=target_cols,
         groups=groups,
+        sample_ids=sample_ids,
         index=df.index,
         transformer=ct,
     )
-
